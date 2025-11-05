@@ -1,0 +1,571 @@
+<!-- <!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Config Ops Hub - Minimal UI</title>
+  <style>
+    body { font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; background:#0f172a; color:#e6eef8; padding:24px; }
+    .container { max-width:900px; margin:0 auto; }
+    h1 { font-size:28px; margin-bottom:8px; color:#ffd166; }
+    .cards { display:flex; gap:12px; margin-bottom:16px; }
+    .card { background:linear-gradient(135deg,#14213d,#0b1220); padding:18px; border-radius:12px; flex:1; box-shadow:0 8px 30px rgba(2,6,23,0.6); }
+    input, textarea { width:100%; padding:8px; margin-top:6px; border-radius:6px; border:1px solid #223; background:#081024; color:#eef; }
+    button { background:#ff6b6b; color:#042; padding:10px 14px; border-radius:10px; border:none; cursor:pointer; font-weight:600; }
+    pre { background:#03102b; padding:12px; border-radius:8px; max-height:360px; overflow:auto; white-space:pre-wrap; }
+    .muted { color:#93a3b8; font-size:13px; }
+    .small { font-size:12px; color:#9fb0c8; margin-top:6px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Config Ops Hub</h1>
+    <p class="muted">Choose an operation and provide inputs. The backend must be running at <code>http://localhost:8000</code>.</p>
+    <div class="cards">
+      <div class="card">
+        <h3>Sheet Loading</h3>
+        <label>Google Sheet URL</label>
+        <input id="sheet_url" placeholder="https://docs.google.com/spreadsheets/..." />
+        <div style="margin-top:8px;">
+          <button onclick="startSheet()">Run Sheet Loader</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>PPT → Video</h3>
+        <label>UUIDs (one per line)</label>
+        <textarea id="ppt_uuids" rows="4">b31d7aa4-c7d2-4842-b945-d31f6cef9ee9</textarea>
+        <div style="margin-top:8px;">
+          <button onclick="startPPT()">Run PPT→Video</button>
+        </div>
+        <div class="small">If you see errors, check the server console and the job log output area below.</div>
+      </div>
+      <div class="card">
+        <h3>S3 URL Updater</h3>
+        <label>Rows: multimedia_id,s3_url (one per line)</label>
+        <textarea id="s3_pairs" rows="4">81045cdb-bdb7-46d4-ac47-1524867e6b30,video link</textarea>
+        <div style="margin-top:8px;">
+          <button onclick="startS3()">Run S3 Updater</button>
+        </div>
+      </div>
+    </div>
+
+    <h3>Job Console</h3>
+    <div>
+      <button onclick="clearConsole()">Clear</button>
+    </div>
+    <pre id="console">Console output will appear here...</pre>
+  </div>
+
+<script>
+  // Debug-friendly API helper:
+  // - fetch the endpoint
+  // - read text (not assuming JSON)
+  // - attempt to parse JSON and return it when successful and OK
+  // - otherwise, throw an Error containing status and raw response text
+  async function api(path, opts) {
+    const url = 'http://localhost:8000' + path;
+    try {
+      const res = await fetch(url, opts);
+      const text = await res.text();
+      let parsed = null;
+      try { parsed = text ? JSON.parse(text) : null; } catch(e) { /* not JSON */ }
+      if (!res.ok) {
+        // Prefer returned JSON detail if present
+        const detail = parsed && (parsed.detail || parsed.error || parsed.message) ? (parsed.detail || parsed.error || parsed.message) : text;
+        throw new Error(`HTTP ${res.status} - ${detail}`);
+      }
+      return parsed === null ? text : parsed;
+    } catch (err) {
+      // Network failures or parsing issues show here
+      throw new Error(`Fetch error for ${url}: ${err.message}`);
+    }
+  }
+
+  const logEl = document.getElementById('console');
+  function append(s){ logEl.textContent += '\n' + s; logEl.scrollTop = logEl.scrollHeight; }
+  function clearConsole(){ logEl.textContent = ''; }
+
+  async function startSheet(){
+    clearConsole();
+    const url = document.getElementById('sheet_url').value.trim();
+    append('Starting sheet loader...');
+    try{
+      const res = await api('/tasks/sheet-loading', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({google_sheet_url: url})
+      });
+      append('Job ID: ' + (res && res.job_id ? res.job_id : JSON.stringify(res)));
+      pollLog(res.job_id);
+    }catch(e){
+      append('Error: ' + e.message);
+    }
+  }
+
+  async function startPPT(){
+    clearConsole();
+    const text = document.getElementById('ppt_uuids').value.trim();
+    const uuids = text.split('\n').map(s=>s.trim()).filter(Boolean);
+    append('Starting PPT→Video for ' + uuids.length + ' UUID(s)...');
+    try{
+      const res = await api('/tasks/ppt-to-video', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({uuids})
+      });
+      append('Job ID: ' + (res && res.job_id ? res.job_id : JSON.stringify(res)));
+      if(res && res.job_id) pollLog(res.job_id);
+    }catch(e){
+      append('Error: ' + e.message);
+    }
+  }
+
+  async function startS3(){
+    clearConsole();
+    const text = document.getElementById('s3_pairs').value.trim();
+    const lines = text.split('\n').map(s=>s.trim()).filter(Boolean);
+    const pairs = lines.map(l => {
+      const parts = l.split(',');
+      return { multimedia_id: (parts[0]||'').trim(), s3_url: (parts[1]||'').trim() };
+    });
+    append('Starting S3 updater for ' + pairs.length + ' row(s)...');
+    try{
+      const res = await api('/tasks/s3-updater', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({pairs})
+      });
+      append('Job ID: ' + (res && res.job_id ? res.job_id : JSON.stringify(res)));
+      if(res && res.job_id) pollLog(res.job_id);
+    }catch(e){
+      append('Error: ' + e.message);
+    }
+  }
+
+  async function pollLog(jobId){
+    if(!jobId){ append('No jobId to poll.'); return; }
+    append('Polling logs for ' + jobId + ' ...');
+    const url = '/tasks/' + jobId + '/log';
+    let tries = 0;
+    const iv = setInterval(async ()=>{
+      tries++;
+      try{
+        const res = await api(url);
+        // The API returns { log: "..." } or raw text — handle both
+        const log = (res && res.log) ? res.log : (typeof res === 'string' ? res : JSON.stringify(res));
+        if(log){
+          document.getElementById('console').textContent = log;
+          if(log.includes('--- JOB') && (log.includes('END') || log.includes('TIMEOUT') || log.includes('ERROR'))){
+            append('\n--- Finished polling.');
+            clearInterval(iv);
+          }
+        } else {
+          append('Empty log response; attempt ' + tries);
+        }
+      }catch(e){
+        append('Waiting for log... attempt ' + tries + ' — ' + e.message);
+        if(tries > 40){
+          append('Giving up after many attempts.');
+          clearInterval(iv);
+        }
+      }
+    }, 2000);
+  }
+</script>
+</body>
+</html> -->
+
+
+<!-- /awesome font with great looking UI -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Config Ops Hub - Tech UI</title>
+  <style>
+    /* Base Styles */
+    body {
+      font-family: 'Roboto Mono', monospace;
+      background: #1e1e1e;
+      color: #e5e5e5;
+      padding: 0;
+      margin: 0;
+      box-sizing: border-box;
+    }
+    h1 {
+      font-size: 36px;
+      color: #00ff99;
+      margin: 20px 0;
+      text-align: center;
+      text-transform: uppercase;
+    }
+    p, .muted {
+      font-size: 16px;
+      color: #b0b0b0;
+      text-align: center;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #2a2a2a;
+      border-radius: 12px;
+      box-shadow: 0 4px 16px rgba(0, 255, 153, 0.4);
+    }
+
+    .cards {
+      display: flex;
+      justify-content: space-around;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+
+    .card {
+      background: #333;
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 4px 20px rgba(0, 255, 153, 0.2);
+      flex: 1;
+      min-width: 280px;
+      max-width: 400px;
+      transition: transform 0.3s ease-in-out;
+    }
+    .card:hover {
+      transform: scale(1.05);
+      box-shadow: 0 6px 24px rgba(0, 255, 153, 0.5);
+    }
+
+    .card h3 {
+      font-size: 22px;
+      color: #00ff99;
+      margin-bottom: 16px;
+      text-transform: uppercase;
+    }
+
+    label {
+      font-size: 14px;
+      margin-bottom: 8px;
+      color: #8f8f8f;
+      display: block;
+    }
+
+    input, textarea {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 10px 1px -13px;
+      border-radius: 8px;
+      border: 1px solid #444;
+      background: #222;
+      color: #e5e5e5;
+      font-size: 14px;
+      outline: none;
+      transition: background 0.3s ease, border-color 0.3s ease;
+    }
+    input:focus, textarea:focus {
+      background: #333;
+      border-color: #00ff99;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      margin-top: 12px;
+      background: #00ff99;
+      color: #1e1e1e;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      transition: background 0.3s ease, transform 0.3s ease;
+    }
+
+    button:hover {
+      background: #00cc7a;
+      transform: scale(1.05);
+    }
+
+    .small {
+      font-size: 12px;
+      color: #888;
+      margin-top: 8px;
+      text-align: center;
+    }
+
+    .job-console {
+      background: #121212;
+      color: #e5e5e5;
+      padding: 20px;
+      border-radius: 12px;
+      margin-top: 40px;
+      font-size: 14px;
+      white-space: pre-wrap;
+      overflow-y: auto;
+      max-height: 400px;
+    }
+
+    .job-console button {
+      padding: 12px;
+      background: #ff4d4d;
+      color: #e5e5e5;
+      border-radius: 60px;
+      border: none;
+      cursor: pointer;
+      width: auto;
+      margin-bottom: 16px;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      transition: background 0.3s ease;
+    }
+
+    .job-console button:hover {
+      background: #ff3333;
+    }
+
+    /* Responsive design */
+    @media (max-width: 768px) {
+      .cards {
+        flex-direction: column;
+        align-items: center;
+      }
+    }
+
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Config Ops Hub</h1>
+    <p class="muted">Choose an operation and provide inputs. The backend must be running at <code>http://localhost:8000</code>.</p>
+    
+    <!-- <div class="cards">
+      <div class="card">
+        <h3>Sheet Loading</h3>
+        <label for="sheet_url">Google Sheet URL</label>
+        <input id="sheet_url" placeholder="https://docs.google.com/spreadsheets/..." />
+        <button onclick="startSheet()">Run Sheet Loader</button>
+      </div>
+      <div class="card">
+        <h3>PPT → Video</h3>
+        <label for="ppt_uuids">UUIDs (one per line)</label>
+        <textarea id="ppt_uuids" rows="4">b31d7aa4-c7d2-4842-b945-d31f6cef9ee9</textarea>
+        <button onclick="startPPT()">Run PPT→Video</button>
+        <div class="small">If you see errors, check the server console and the job log output area below.</div>
+      </div>
+      <div class="card">
+        <h3>S3 URL Updater</h3>
+        <label for="s3_pairs">Rows: multimedia_id,s3_url (one per line)</label>
+        <textarea id="s3_pairs" rows="4">81045cdb-bdb7-46d4-ac47-1524867e6b30,video link</textarea>
+        <button onclick="startS3()">Run S3 Updater</button>
+      </div>
+    </div> -->
+
+<div class="cards">
+  <div class="card">
+    <h3>Sheet Loading</h3>
+    <label for="sheet_url">Google Sheet URL</label>
+    <textarea id="sheet_url" rows="4" placeholder="https://docs.google.com/spreadsheets/..."></textarea>
+    <button onclick="startSheet()">Run Sheet Loader</button>
+  </div>
+
+  <div class="card">
+    <h3>PPT → Video</h3>
+    <label for="ppt_uuids">UUIDs (one per line)</label>
+    <textarea id="ppt_uuids" rows="4">b31d7aa4-c7d2-4842-b945-d31f6cef9ee9</textarea>
+    <button onclick="startPPT()">Run PPT→Video</button>
+    <div class="small">If you see errors, check the server console and the job log output area below.</div>
+  </div>
+
+  <div class="card">
+    <h3>S3 URL Updater</h3>
+    <label for="s3_pairs">Rows: multimedia_id,s3_url (one per line)</label>
+    <textarea id="s3_pairs" rows="4">81045cdb-bdb7-46d4-ac47-1524867e6b30,video link</textarea>
+    <button onclick="startS3()">Run S3 Updater</button>
+  </div>
+  <!-- NEW: Duration Remover -->
+<div class="card">
+  <h3>Duration Remover</h3>
+  <label for="duration_uuids">UUIDs (one per line)</label>
+  <textarea id="duration_uuids" rows="4" placeholder="uuid-1&#10;uuid-2"></textarea>
+  <button onclick="startDuration()">Run Duration Remover</button>
+  <div class="small">Payload → <code>{ uuids: [...] }</code> → <code>/tasks/duration-remover</code></div>
+</div>
+
+<!-- NEW: Unlock Resources For Users -->
+<div class="card">
+  <h3>Unlock Resources For Users</h3>
+  <label for="unlock_uuids">UUIDs (one per line)</label>
+  <textarea id="unlock_uuids" rows="4" placeholder="uuid-1&#10;uuid-2"></textarea>
+  <button onclick="startUnlock()">Run Unlock</button>
+  <div class="small">Payload → <code>{ uuids: [...] }</code> → <code>/tasks/unlock-resources</code></div>
+</div>
+
+<!-- NEW: Old PPT → New PPT -->
+<div class="card">
+  <h3>Old PPT → New PPT</h3>
+  <label for="oldppt_pairs">Rows: uuid,new_ppt_url (one per line)</label>
+  <textarea id="oldppt_pairs" rows="4" placeholder="b31d7aa4-... , https://example.com/new.pptx&#10;..."></textarea>
+  <button onclick="startOldPpt()">Run Old→New PPT</button>
+  <div class="small">Payload → <code>{ pairs: [{ uuid, new_ppt_url }] }</code> → <code>/tasks/oldppt-to-newppt</code></div>
+</div>
+
+
+<div class="job-console">
+  <button onclick="clearConsole()">Clear Console</button>
+  <pre id="console">Console output will appear here...</pre>
+</div>
+
+
+<script>
+  // Debug-friendly API helper:
+  async function api(path, opts) {
+    const url = 'http://localhost:8000' + path;
+    try {
+      const res = await fetch(url, opts);
+      const text = await res.text();
+      let parsed = null;
+      try { parsed = text ? JSON.parse(text) : null; } catch(e) { /* not JSON */ }
+      if (!res.ok) {
+        const detail = parsed && (parsed.detail || parsed.error || parsed.message) ? (parsed.detail || parsed.error || parsed.message) : text;
+        throw new Error(`HTTP ${res.status} - ${detail}`);
+      }
+      return parsed === null ? text : parsed;
+    } catch (err) {
+      throw new Error(`Fetch error for ${url}: ${err.message}`);
+    }
+  }
+
+  const logEl = document.getElementById('console');
+  function append(s){ logEl.textContent += '\n' + s; logEl.scrollTop = logEl.scrollHeight; }
+  function clearConsole(){ logEl.textContent = ''; }
+
+  async function startSheet(){
+    clearConsole();
+    const url = document.getElementById('sheet_url').value.trim();
+    append('Starting sheet loader...');
+    try{
+      const res = await api('/tasks/sheet-loading', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({google_sheet_url: url})
+      });
+      append('Job ID: ' + (res && res.job_id ? res.job_id : JSON.stringify(res)));
+      pollLog(res.job_id);
+    }catch(e){
+      append('Error: ' + e.message);
+    }
+  }
+
+  async function startPPT(){
+    clearConsole();
+    const text = document.getElementById('ppt_uuids').value.trim();
+    const uuids = text.split('\n').map(s=>s.trim()).filter(Boolean);
+    append('Starting PPT→Video for ' + uuids.length + ' UUID(s)...');
+    try{
+      const res = await api('/tasks/ppt-to-video', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({uuids})
+      });
+      append('Job ID: ' + (res && res.job_id ? res.job_id : JSON.stringify(res)));
+      if(res && res.job_id) pollLog(res.job_id);
+    }catch(e){
+      append('Error: ' + e.message);
+    }
+  }
+
+  async function startS3(){
+    clearConsole();
+    const text = document.getElementById('s3_pairs').value.trim();
+    const lines = text.split('\n').map(s=>s.trim()).filter(Boolean);
+    const pairs = lines.map(l => {
+      const parts = l.split(',');
+      return { multimedia_id: (parts[0]||'').trim(), s3_url: (parts[1]||'').trim() };
+    });
+    append('Starting S3 updater for ' + pairs.length + ' row(s)...');
+    try{
+      const res = await api('/tasks/s3-updater', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({pairs})
+      });
+      append('Job ID: ' + (res && res.job_id ? res.job_id : JSON.stringify(res)));
+      if(res && res.job_id) pollLog(res.job_id);
+    }catch(e){
+      append('Error: ' + e.message);
+    }
+  }
+
+  async function startDuration(){
+    clearConsole();
+    const text = document.getElementById('duration_uuids').value.trim();
+    const uuids = text.split('\n').map(s=>s.trim()).filter(Boolean);
+    append('Starting Duration Remover for ' + uuids.length + ' UUID(s)...');
+    try{
+      const res = await api('/tasks/duration-remover', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ uuids })
+      });
+      append('Job ID: ' + (res && res.job_id ? res.job_id : JSON.stringify(res)));
+      if(res && res.job_id) pollLog(res.job_id);
+    }catch(e){ append('Error: ' + e.message); }
+  }
+
+  async function startUnlock(){
+    clearConsole();
+    const text = document.getElementById('unlock_uuids').value.trim();
+    const uuids = text.split('\n').map(s=>s.trim()).filter(Boolean);
+    append('Starting Unlock for ' + uuids.length + ' UUID(s)...');
+    try{
+      const res = await api('/tasks/unlock-resources', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ uuids })
+      });
+      append('Job ID: ' + (res && res.job_id ? res.job_id : JSON.stringify(res)));
+      if(res && res.job_id) pollLog(res.job_id);
+    }catch(e){ append('Error: ' + e.message); }
+  }
+
+  async function startOldPpt(){
+    clearConsole();
+    const text = document.getElementById('oldppt_pairs').value.trim();
+    const lines = text.split('\n').map(s=>s.trim()).filter(Boolean);
+    const pairs = lines.map(l => {
+      const [uuid, url] = l.split(',').map(x => (x||'').trim());
+      return { uuid, new_ppt_url: url };
+    });
+    append('Starting Old PPT → New PPT for ' + pairs.length + ' row(s)...');
+    try{
+      const res = await api('/tasks/oldppt-to-newppt', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ pairs })
+      });
+      append('Job ID: ' + (res && res.job_id ? res.job_id : JSON.stringify(res)));
+      if(res && res.job_id) pollLog(res.job_id);
+    }catch(e){ append('Error: ' + e.message); }
+  }
+
+
+  async function pollLog(jobId){
+    if(!jobId){ append('No jobId to poll.'); return; }
+    append('Polling logs for ' + jobId + ' ...');
+    const url = '/tasks/' + jobId + '/log';
+    let tries = 0;
+    const iv = setInterval(async ()=>{
+      tries++;
+      try{
+        const res = await api(url);
+        const log = (res && res.log) ? res.log : (typeof res === 'string' ? res : JSON.stringify(res));
+        if(log){
+          document.getElementById('console').textContent = log;
+          if(log.includes('--- JOB') && (log.includes('END') || log.includes('TIMEOUT') || log.includes('ERROR'))){
+            append('\n--- Finished polling.');
+            clearInterval(iv);
+          }
+        } else {
+          append('Empty log response; attempt ' + tries);
+        }
+      }catch(e){
+        append('Waiting for log... attempt ' + tries + ' — ' + e.message);
+        if(tries > 40){
+          append('Giving up after many attempts.');
+          clearInterval(iv);
+        }
+      }
+    }, 2000);
+  }
+</script>
+</body>
+</html>
+
+
+
