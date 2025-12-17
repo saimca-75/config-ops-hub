@@ -31,7 +31,7 @@ TARGET_URL = "https://nkb-backend-ccbp-prod-apis.ccbp.in/admin/nkb_load_data/con
 # ⚠️ Credentials used to log into the Admin site (typed into the login form online)
 #    Consider moving these to environment variables or a secrets manager.
 USERNAME = "content_loader"
-PASSWORD = "CoNmsBzJKd"
+PASSWORD = "C"
 
 # ✅ Public/accessible Google Sheet URL that the script opens in a browser
 #    The script *reads live data* from this page: spreadsheet title + sheet tab names.
@@ -403,3 +403,4 @@ def run(headless: bool = False):
 if __name__ == "__main__":
     # Set headless=False to watch the browser; set True for servers/automation.
     run(headless=False)
+
