@@ -80,7 +80,7 @@
 # def main():
 #     LOGIN_URL = "https://nkb-backend-ccbp-gamma.earlywave.in/admin/login/"
 #     USERNAME = "content_loader"
-#     PASSWORD = "ABIsA9QTn9"
+#     PASSWORD = "ABIs"
 #     BASE_URL = "https://nkb-backend-ccbp-gamma.earlywave.in/admin/nkb_interactive_video/multimedia/"
 #     multimedia_id = "0d851f5c-da11-4e4c-b3f4-7784694297ed"  # Given multimedia ID
 #     new_url = "https://media-content.ccbp.in/ccbp_prod/media/video_content/niat/niat_classes/build_your_own_dynamic_web_application/english/23-10-2025-introductionToDynamicWebApplications-English-V1/video__extension__"  # S3 URL to change
@@ -284,7 +284,7 @@ def update_multimedia_url(driver, base_url, multimedia_id, new_url):
 def main():
     # LOGIN_URL = "https://nkb-backend-ccbp-prod-apis.ccbp.in/admin/login/"
     # USERNAME = "content_loader"
-    # PASSWORD = "CoNmsBzJKd"
+    # PASSWORD = "CoN"
     # BASE_URL = "https://nkb-backend-ccbp-prod-apis.ccbp.in/admin/nkb_interactive_video/multimedia/"
 
     # List of multimedia updates: (multimedia_id, new_url)
@@ -302,3 +302,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
