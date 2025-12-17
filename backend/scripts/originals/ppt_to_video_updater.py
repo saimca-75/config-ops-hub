@@ -11,7 +11,7 @@ import time, logging
 LOGIN_URL = "https://nkb-backend-ccbp-beta.earlywave.in/admin/login/"
 BASE_URL = "https://nkb-backend-ccbp-beta.earlywave.in/admin/nkb_learning_resource/learningresource/"
 USERNAME = "content_loader"
-PASSWORD = "ABIsA9QTn9"
+PASSWORD = "AB"
 
 # ---------------------------------------------
 # Chrome WebDriver Setup (No ChromeDriver path)
@@ -118,3 +118,4 @@ uuid_list = ["b31d7aa4-c7d2-4842-b945-d31f6cef9ee9"]
 
 for uuid in uuid_list:
     modify_resource(uuid)
+
