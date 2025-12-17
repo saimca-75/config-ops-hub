@@ -25,7 +25,7 @@ from selenium.webdriver.common.keys import Keys
 LOGIN_URL = "https://nkb-backend-ccbp-prod-apis.ccbp.in/admin/login/"
 TARGET_URL = "https://nkb-backend-ccbp-prod-apis.ccbp.in/admin/nkb_question/questiontag/?q={}"
 USERNAME = "content_loader"
-PASSWORD = "CoNmsBzJKd"
+PASSWORD = "C"
 
 # ✅ UPDATED OUTPUT FILE PATH
 OUTPUT_FILE_PATH = "/home/nxtwavetech/Videos/config-ops-hub/backend/scripts/originals/question_ids.txt"
